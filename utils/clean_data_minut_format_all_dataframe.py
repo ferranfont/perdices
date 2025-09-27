@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
-from chart_volume import plot_close_and_volume
+from plot_chart_volume import plot_close_and_volume
 from config import DATA_DIR, SYMBOL, OHLCV_AGGREGATION
 
 
