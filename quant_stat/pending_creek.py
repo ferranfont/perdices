@@ -68,31 +68,53 @@ class PendingCreekDetector:
             # Check for the pattern:
             # 1. Previous fractal is a BIG BOTTOM (end of big downtrend)
             # 2. Current fractal is ANY TOP (potential resistance) - no swing size filter
+            # 3. NO EXISTING ACTIVE CREEK (not crossed over yet)
             if (previous_fractal['swing_size'] == 'big' and
                 previous_fractal['type'] == 'BOTTOM' and
                 current_fractal['type'] == 'TOP'):
 
-                creek_info = {
-                    'index': current_fractal['index'],
-                    'timestamp': current_fractal['timestamp'],
-                    'price': current_fractal['price'],
-                    'type': 'PENDING_CREEK',
-                    'trigger_bottom_price': previous_fractal['price'],
-                    'trigger_bottom_time': previous_fractal['timestamp'],
-                    'strength': current_fractal['swing_size'],
-                    'distance_from_bottom': round(current_fractal['price'] - previous_fractal['price'], 2),
-                    'bars_from_bottom': current_fractal['index'] - previous_fractal['index'],
-                    'original_price': current_fractal['price'],  # Store original level
-                    'original_index': current_fractal['index'],  # Store original creation index
-                    'moved': False  # Track if creek has been moved
-                }
+                # Check if there are any existing active pending creeks
+                current_index = current_fractal['index']
+                has_active_creek = False
 
-                pending_creeks.append(creek_info)
+                if price_data is not None:
+                    for existing_creek in pending_creeks:
+                        creek_start = existing_creek.get('original_index', existing_creek['index'])
+                        creek_end = creek_start + self.lookback_bars
+                        creek_price = existing_creek['price']
 
-                print(f"  -> PENDING CREEK detected at {creek_info['timestamp']}")
-                print(f"     Price: ${creek_info['price']}, Strength: {creek_info['strength']}")
-                print(f"     After BIG bottom at ${creek_info['trigger_bottom_price']}")
-                print(f"     Creek height: ${creek_info['distance_from_bottom']}")
+                        # Check if this existing creek overlaps with current time and hasn't been crossed
+                        if current_index <= creek_end:
+                            # Check if this creek has been crossed over
+                            crossed = self.check_crossover(price_data, creek_price, creek_start, current_index)
+                            if not crossed:
+                                has_active_creek = True
+                                print(f"  -> SKIPPING new creek at {current_fractal['timestamp']} - Active creek exists at ${creek_price}")
+                                break
+
+                # Only create new creek if no active creek exists
+                if not has_active_creek:
+                    creek_info = {
+                        'index': current_fractal['index'],
+                        'timestamp': current_fractal['timestamp'],
+                        'price': current_fractal['price'],
+                        'type': 'PENDING_CREEK',
+                        'trigger_bottom_price': previous_fractal['price'],
+                        'trigger_bottom_time': previous_fractal['timestamp'],
+                        'strength': current_fractal['swing_size'],
+                        'distance_from_bottom': round(current_fractal['price'] - previous_fractal['price'], 2),
+                        'bars_from_bottom': current_fractal['index'] - previous_fractal['index'],
+                        'original_price': current_fractal['price'],  # Store original level
+                        'original_index': current_fractal['index'],  # Store original creation index
+                        'moved': False  # Track if creek has been moved
+                    }
+
+                    pending_creeks.append(creek_info)
+
+                    print(f"  -> PENDING CREEK detected at {creek_info['timestamp']}")
+                    print(f"     Price: ${creek_info['price']}, Strength: {creek_info['strength']}")
+                    print(f"     After BIG bottom at ${creek_info['trigger_bottom_price']}")
+                    print(f"     Creek height: ${creek_info['distance_from_bottom']}")
 
         # Apply trailing logic if price data is available
         if price_data is not None and len(pending_creeks) > 0:

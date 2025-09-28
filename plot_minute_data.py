@@ -3,7 +3,7 @@ import webbrowser
 import pandas as pd
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
-import plotly.express as px
+import plotly.express as px1
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
@@ -201,12 +201,35 @@ def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=
             # Calculate end time for the 60-bar line extension
             creek_start_time = creek['timestamp']
 
+            # Ensure timezone compatibility for comparison
+            if hasattr(creek_start_time, 'tz_localize'):
+                creek_start_time = creek_start_time.tz_localize(None) if creek_start_time.tz is not None else creek_start_time
+
+            # Make sure df['date'] is also timezone-naive for comparison
+            df_date_naive = df['date'].dt.tz_localize(None) if df['date'].dt.tz is not None else df['date']
+
             # Find the index in the main dataframe for time calculation
-            creek_mask = df['date'] >= creek_start_time
+            creek_mask = df_date_naive >= creek_start_time
             if creek_mask.any():
                 start_idx = df[creek_mask].index[0]
-                # Extend line for 60 bars (or to end of data if less than 60 bars remaining)
-                end_idx = min(start_idx + 60, len(df) - 1)
+
+                # Check for crossover: find first close price above creek level
+                crossover_idx = None
+                max_extension = min(start_idx + 60, len(df) - 1)  # Maximum 60 bars
+
+                for i in range(start_idx, max_extension + 1):
+                    if df.iloc[i]['close'] > creek['price']:
+                        crossover_idx = i
+                        break
+
+                # Determine end index based on crossover logic
+                if crossover_idx is not None:
+                    # Extend 2 bars after crossover (but not beyond data)
+                    end_idx = min(crossover_idx + 2, len(df) - 1)
+                else:
+                    # No crossover found, extend full 60 bars
+                    end_idx = max_extension
+
                 creek_end_time = df.iloc[end_idx]['date']
 
                 # Add horizontal line for pending creek
@@ -223,6 +246,26 @@ def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=
                     hovertemplate=f'Pending Creek<br>Price: ${creek["price"]:.2f}<br>Strength: {creek["strength"]}<extra></extra>',
                     showlegend=False
                 ), row=1, col=1)
+
+                # Add green triangle-up marker at crossover point if crossover occurred
+                if crossover_idx is not None:
+                    crossover_time = df.iloc[crossover_idx]['date']
+                    crossover_close = df.iloc[crossover_idx]['close']
+
+                    fig.add_trace(go.Scatter(
+                        x=[crossover_time],
+                        y=[crossover_close],
+                        mode='markers',
+                        marker=dict(
+                            color='lime',
+                            size=15,
+                            symbol='triangle-up',
+                            line=dict(width=2, color='green')
+                        ),
+                        name=f'Creek Crossover',
+                        hovertemplate=f'Crossover<br>Time: %{{x}}<br>Close: ${crossover_close:.2f}<br>Creek: ${creek["price"]:.2f}<extra></extra>',
+                        showlegend=False
+                    ), row=1, col=1)
 
                 # Add a small marker at the creek point
                 fig.add_trace(go.Scatter(
@@ -340,11 +383,14 @@ if __name__ == "__main__":
     df.columns = [col.strip().lower() for col in df.columns]
     df = df.rename(columns={'volumen': 'volume'})
 
-    # Asegurar formato datetime con zona UTC
-    df['date'] = pd.to_datetime(df['date'], utc=True)
+    # Asegurar formato datetime (timezone-naive, como en main.py)
+    df['date'] = pd.to_datetime(df['date'])
+    # Convert to timezone-naive if timezone-aware
+    if df['date'].dt.tz is not None:
+        df['date'] = df['date'].dt.tz_localize(None)
 
     # Filtrar datos solo para la fecha objetivo
-    target_date_start = pd.to_datetime(TARGET_DATE, utc=True)
+    target_date_start = pd.to_datetime(TARGET_DATE)
     target_date_end = target_date_start + pd.Timedelta(days=1)
 
     df_filtered = df[(df['date'] >= target_date_start) & (df['date'] < target_date_end)].copy()
@@ -363,7 +409,7 @@ if __name__ == "__main__":
         # Crear gráfico con los datos del día específico
         print(f"\nGenerando gráfico para {TARGET_DATE}...")
         timeframe = f'1min_{TARGET_DATE}'
-        plot_minute_data(symbol, timeframe, df_filtered, fractal_method='zigzag', change_pct=0.05)
+        plot_minute_data(symbol, timeframe, df_filtered, fractal_method='zigzag', change_pct=0.1)
 
     else:
         print(f"No se encontraron datos para la fecha {TARGET_DATE}")

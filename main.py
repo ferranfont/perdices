@@ -67,12 +67,12 @@ if os.path.exists(file_path):
     print(f"\nMuestra de datos con días nombrados:")
     print(df.head())
 
-    # Run quantitative fractal analysis
+    # Run quantitative fractal analysis (automatically generates plot)
     print(f"\n=== RUNNING QUANTITATIVE FRACTAL ANALYSIS ({FRACTAL_METHOD.upper()} METHOD) ===")
-    fractals, pending_creeks = fractal_analysis(FRACTAL_METHOD, CHANGE_PCT, WINDOW_SIZE, CONFIRMATION_PERIODS)
+    fractal_analysis(FRACTAL_METHOD, CHANGE_PCT, WINDOW_SIZE, CONFIRMATION_PERIODS)
 
-    # Generate plot with fractal and pending creek data
-    print(f"\n=== GENERATING CHART FROM MAIN.PY ===")
+    # Also generate direct plot from main.py
+    print(f"\n=== GENERATING ADDITIONAL PLOT FROM MAIN.PY ===")
     # Para el gráfico, necesitamos datetime
     if 'time' in df.columns:
         df_for_plot = df.copy()
