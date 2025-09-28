@@ -9,9 +9,59 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 from config import CHART_WIDTH, CHART_HEIGHT, CHART_TEMPLATE, get_chart_path, DATA_DIR, SYMBOL
 
-def plot_minute_data(symbol, timeframe, df):
+# ⚙️ Configuration =========================================
+
+CSV_FILE = 'es_1min_data_2015_2025.csv'  # CSV file to plot
+FRACTAL_CSV_FILE = 'fractals_2023_03_01_zigzag_0.1.csv'  # Fractal detection results
+
+#  ==========================================================
+
+
+def load_fractals_data(method='zigzag', change_pct=0.05, window_size=7, confirmation_periods=3):
+    """
+    Load fractals data from the outputs folder using the configured FRACTAL_CSV_FILE
+    """
+    try:
+        # Use the configured fractal file instead of generating dynamically
+        fractal_file = FRACTAL_CSV_FILE
+        fractals_path = os.path.join('outputs', fractal_file)
+
+        if os.path.exists(fractals_path):
+            df_fractals = pd.read_csv(fractals_path)
+            df_fractals['timestamp'] = pd.to_datetime(df_fractals['timestamp'])
+            print(f"Loaded {len(df_fractals)} fractals from {fractal_file}")
+            return df_fractals, fractal_file
+        else:
+            print(f"Fractals file not found: {fractals_path}")
+            return None, fractal_file
+    except Exception as e:
+        print(f"Error loading fractals: {e}")
+        return None, fractal_file
+
+def load_pending_creek_data():
+    """
+    Load pending creek data from the outputs folder
+    """
+    try:
+        creek_file = FRACTAL_CSV_FILE.replace('.csv', '_pending_creeks.csv')
+        creek_path = os.path.join('outputs', creek_file)
+
+        if os.path.exists(creek_path):
+            df_creeks = pd.read_csv(creek_path)
+            df_creeks['timestamp'] = pd.to_datetime(df_creeks['timestamp'])
+            print(f"Loaded {len(df_creeks)} pending creeks from {creek_file}")
+            return df_creeks
+        else:
+            print(f"No pending creek file found: {creek_path}")
+            return None
+    except Exception as e:
+        print(f"Error loading pending creeks: {e}")
+        return None
+
+def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=0.05, window_size=7, confirmation_periods=3):
     """
     Función especializada para graficar datos de minutos con etiquetas de hora en el eje X
+    Incluye fractales (picos y valles) como puntos azules
     """
     html_path = get_chart_path(symbol, timeframe)
 
@@ -19,11 +69,18 @@ def plot_minute_data(symbol, timeframe, df):
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values('date')
 
+    # Load fractals data with dynamic filename
+    df_fractals, fractal_file = load_fractals_data(fractal_method, change_pct, window_size, confirmation_periods)
+
+    # Load pending creek data
+    df_creeks = load_pending_creek_data()
+
     fig = make_subplots(
         rows=2, cols=1,
         shared_xaxes=True,
         row_heights=[0.80, 0.20],
         vertical_spacing=0.03,
+        specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
     )
 
     # Gráfico de velas (candlestick) con outline negro semi-transparente
@@ -33,14 +90,155 @@ def plot_minute_data(symbol, timeframe, df):
         high=df['high'],
         low=df['low'],
         close=df['close'],
-        increasing_line_color='rgba(0,0,0,0.95)',     # Outline negro con alpha 0.9 para velas alcistas
-        decreasing_line_color='rgba(0,0,0,0.95)',     # Outline negro con alpha 0.9 para velas bajistas
-        increasing_fillcolor='lime',                 # Relleno verde lima brillante para velas alcistas
-        decreasing_fillcolor='red',                  # Relleno rojo para velas bajistas
+        increasing_line_color='rgba(0,0,0,0.5)',     # Outline negro con alpha 0.5 para velas alcistas
+        decreasing_line_color='rgba(0,0,0,0.5)',     # Outline negro con alpha 0.5 para velas bajistas
+        increasing_fillcolor='rgba(0,255,0,0.5)',    # Verde lima con alpha 0.5 para velas alcistas
+        decreasing_fillcolor='rgba(255,0,0,0.5)',    # Rojo con alpha 0.5 para velas bajistas
         line=dict(width=1),
         name='OHLC'
     ), row=1, col=1)
 
+    # Plot fractals (tops and bottoms) with color coding by swing size
+    if df_fractals is not None and len(df_fractals) > 0:
+        # Separate tops and bottoms for better visualization
+        tops = df_fractals[df_fractals['type'] == 'TOP']
+        bottoms = df_fractals[df_fractals['type'] == 'BOTTOM']
+
+        # Add blue line connecting all fractals
+        fig.add_trace(go.Scatter(
+            x=df_fractals['timestamp'],
+            y=df_fractals['price'],
+            mode='lines',
+            line=dict(
+                color='blue',
+                width=1
+            ),
+            name='Fractal Line',
+            hovertemplate='Fractal Line<br>Time: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+        ), row=1, col=1)
+
+        # Add tops with color coding based on swing size
+        if len(tops) > 0:
+            # Separate big swings from others for tops
+            big_tops = tops[tops.get('swing_size', 'noise') == 'big'] if 'swing_size' in tops.columns else tops.iloc[0:0]
+            other_tops = tops[tops.get('swing_size', 'noise') != 'big'] if 'swing_size' in tops.columns else tops
+
+            # Add purple dots for big swing tops
+            if len(big_tops) > 0:
+                fig.add_trace(go.Scatter(
+                    x=big_tops['timestamp'],
+                    y=big_tops['price'],
+                    mode='markers',
+                    marker=dict(
+                        color='purple',
+                        size=10,
+                        symbol='circle',
+                        line=dict(width=1, color='darkmagenta')
+                    ),
+                    name='Big Tops',
+                    hovertemplate='Big Top<br>Time: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+                ), row=1, col=1)
+
+            # Add blue dots for small/noise swing tops
+            if len(other_tops) > 0:
+                fig.add_trace(go.Scatter(
+                    x=other_tops['timestamp'],
+                    y=other_tops['price'],
+                    mode='markers',
+                    marker=dict(
+                        color='blue',
+                        size=8,
+                        symbol='circle',
+                        line=dict(width=1, color='darkblue')
+                    ),
+                    name='Tops',
+                    hovertemplate='Top<br>Time: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+                ), row=1, col=1)
+
+        # Add bottoms with color coding based on swing size
+        if len(bottoms) > 0:
+            # Separate big swings from others for bottoms
+            big_bottoms = bottoms[bottoms.get('swing_size', 'noise') == 'big'] if 'swing_size' in bottoms.columns else bottoms.iloc[0:0]
+            other_bottoms = bottoms[bottoms.get('swing_size', 'noise') != 'big'] if 'swing_size' in bottoms.columns else bottoms
+
+            # Add purple dots for big swing bottoms
+            if len(big_bottoms) > 0:
+                fig.add_trace(go.Scatter(
+                    x=big_bottoms['timestamp'],
+                    y=big_bottoms['price'],
+                    mode='markers',
+                    marker=dict(
+                        color='purple',
+                        size=10,
+                        symbol='circle',
+                        line=dict(width=1, color='darkmagenta')
+                    ),
+                    name='Big Bottoms',
+                    hovertemplate='Big Bottom<br>Time: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+                ), row=1, col=1)
+
+            # Add blue dots for small/noise swing bottoms
+            if len(other_bottoms) > 0:
+                fig.add_trace(go.Scatter(
+                    x=other_bottoms['timestamp'],
+                    y=other_bottoms['price'],
+                    mode='markers',
+                    marker=dict(
+                        color='blue',
+                        size=8,
+                        symbol='circle',
+                        line=dict(width=1, color='darkblue')
+                    ),
+                    name='Bottoms',
+                    hovertemplate='Bottom<br>Time: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+                ), row=1, col=1)
+
+    # Plot pending creek lines (green horizontal lines after big downtrends)
+    if df_creeks is not None and len(df_creeks) > 0:
+        print(f"Adding {len(df_creeks)} pending creek lines to chart")
+
+        for _, creek in df_creeks.iterrows():
+            # Calculate end time for the 60-bar line extension
+            creek_start_time = creek['timestamp']
+
+            # Find the index in the main dataframe for time calculation
+            creek_mask = df['date'] >= creek_start_time
+            if creek_mask.any():
+                start_idx = df[creek_mask].index[0]
+                # Extend line for 60 bars (or to end of data if less than 60 bars remaining)
+                end_idx = min(start_idx + 60, len(df) - 1)
+                creek_end_time = df.iloc[end_idx]['date']
+
+                # Add horizontal line for pending creek
+                fig.add_trace(go.Scatter(
+                    x=[creek_start_time, creek_end_time],
+                    y=[creek['price'], creek['price']],
+                    mode='lines',
+                    line=dict(
+                        color='green',
+                        width=2,
+                        dash='solid'
+                    ),
+                    name=f'Pending Creek ${creek["price"]}',
+                    hovertemplate=f'Pending Creek<br>Price: ${creek["price"]:.2f}<br>Strength: {creek["strength"]}<extra></extra>',
+                    showlegend=False
+                ), row=1, col=1)
+
+                # Add a small marker at the creek point
+                fig.add_trace(go.Scatter(
+                    x=[creek_start_time],
+                    y=[creek['price']],
+                    mode='markers',
+                    marker=dict(
+                        color='green',
+                        size=12,
+                        symbol='diamond',
+                        line=dict(width=2, color='darkgreen')
+                    ),
+                    name='Creek Point',
+                    hovertemplate=f'Pending Creek Start<br>Time: %{{x}}<br>Price: ${creek["price"]:.2f}<br>Strength: {creek["strength"]}<extra></extra>',
+                    showlegend=False
+                ), row=1, col=1)
 
     # Barras de volumen
     fig.add_trace(go.Bar(
@@ -55,7 +253,7 @@ def plot_minute_data(symbol, timeframe, df):
 
     fig.update_layout(
         dragmode='pan',
-        title=f'{symbol}_{timeframe} - Perdices',
+        title=f'{symbol}_{timeframe} - Perdices - {fractal_file}',
         width=CHART_WIDTH,
         height=CHART_HEIGHT,
         margin=dict(l=20, r=20, t=40, b=20),
@@ -103,6 +301,7 @@ def plot_minute_data(symbol, timeframe, df):
         ),
     )
 
+
     fig.write_html(html_path, config={
         "scrollZoom": True,
         "displayModeBar": True,  # Mostrar barra de navegación
@@ -115,7 +314,7 @@ def plot_minute_data(symbol, timeframe, df):
             "scale": 1
         }
     })
-    print(f"✅ Gráfico de minutos guardado como HTML: '{html_path}'")
+    print(f"Gráfico de minutos guardado como HTML: '{html_path}'")
 
     webbrowser.open('file://' + os.path.realpath(html_path))
 
@@ -126,13 +325,13 @@ if __name__ == "__main__":
     symbol = SYMBOL
 
     # ====================================================
-    # 📥 CARGA DE DATOS
+    # CARGA DE DATOS
     # ====================================================
     directorio = str(DATA_DIR)
-    nombre_fichero = 'es_1min_data_2015_2025.csv'
-    ruta_completa = os.path.join(directorio, nombre_fichero)
+    ruta_completa = os.path.join(directorio, CSV_FILE)
 
-    print(f"\n======================== 🔍 Extrayendo datos del {TARGET_DATE} ===========================")
+    print(f"\n======================== Extrayendo datos del {TARGET_DATE} ===========================")
+    print(f"CSV File: {CSV_FILE}")
     df = pd.read_csv(ruta_completa)
     print('Fichero:', ruta_completa, 'importado')
     print(f"Características del Fichero Base: {df.shape}")
@@ -154,7 +353,7 @@ if __name__ == "__main__":
 
     if len(df_filtered) > 0:
         # Mostrar estadísticas básicas
-        print("\n📈 Estadísticas del día:")
+        print("\nEstadísticas del día:")
         print(f"Open: {df_filtered['open'].iloc[0]:.2f}")
         print(f"High: {df_filtered['high'].max():.2f}")
         print(f"Low: {df_filtered['low'].min():.2f}")
@@ -162,10 +361,10 @@ if __name__ == "__main__":
         print(f"Volume total: {df_filtered['volume'].sum():,.0f}")
 
         # Crear gráfico con los datos del día específico
-        print(f"\n📊 Generando gráfico para {TARGET_DATE}...")
+        print(f"\nGenerando gráfico para {TARGET_DATE}...")
         timeframe = f'1min_{TARGET_DATE}'
-        plot_minute_data(symbol, timeframe, df_filtered)
+        plot_minute_data(symbol, timeframe, df_filtered, fractal_method='zigzag', change_pct=0.05)
 
     else:
-        print(f"❌ No se encontraron datos para la fecha {TARGET_DATE}")
+        print(f"No se encontraron datos para la fecha {TARGET_DATE}")
         print("Verifique que la fecha esté disponible en el archivo de datos.")
