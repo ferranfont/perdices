@@ -147,7 +147,7 @@ def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=
                     mode='markers',
                     marker=dict(
                         color='blue',
-                        size=8,
+                        size=6,
                         symbol='circle',
                         line=dict(width=1, color='darkblue')
                     ),
@@ -185,7 +185,7 @@ def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=
                     mode='markers',
                     marker=dict(
                         color='blue',
-                        size=8,
+                        size=6,
                         symbol='circle',
                         line=dict(width=1, color='darkblue')
                     ),
