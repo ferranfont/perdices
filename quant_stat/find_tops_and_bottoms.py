@@ -11,7 +11,7 @@ from config import DATA_DIR, SYMBOL
 from fractal_detector import UnifiedZigzagDetector, RealTimeExtremeDetector, FractalType
 from plot_minute_data import plot_minute_data
 
-from pending_creek import analyze_pending_creeks
+from find_pending_creek import analyze_pending_creeks
 
 # Configuration variables
 # CHANGE_PCT is now passed as parameter from main.py
@@ -341,14 +341,14 @@ def main(method='zigzag', change_pct=0.05, window_size=7, confirmation_periods=3
     print("="*60)
 
     # Configuration
-    data_filename = 'es_1min_clean_2023_03_01.csv'
+    data_filename = 'es_1min_clean_2023_03_02.csv'
 
     # Generate filename based on method
     if method == 'zigzag':
-        output_filename = f'fractals_2023_03_01_zigzag_{change_pct}.csv'
+        output_filename = f'fractals_2023_03_02_zigzag_{change_pct}.csv'
         print(f"Using ZIGZAG method with {change_pct}% minimum change")
     else:  # window method
-        output_filename = f'fractals_2023_03_01_window_{window_size}_{confirmation_periods}.csv'
+        output_filename = f'fractals_2023_03_02_window_{window_size}_{confirmation_periods}.csv'
         print(f"Using WINDOW method with window size {window_size} and {confirmation_periods} confirmation periods")
 
     try:

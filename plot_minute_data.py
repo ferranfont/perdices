@@ -58,7 +58,37 @@ def load_pending_creek_data():
         print(f"Error loading pending creeks: {e}")
         return None
 
-def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=0.05, window_size=7, confirmation_periods=3):
+def load_master_candle_data():
+    """
+    Load master candle detection results from outputs folder
+    """
+    try:
+        import glob
+        import json
+
+        # Look for the most recent master candle report
+        pattern = os.path.join('outputs', 'master_candle_report_*.html')
+        report_files = glob.glob(pattern)
+
+        if not report_files:
+            print("No master candle reports found")
+            return None
+
+        # Get the most recent report file
+        latest_report = max(report_files, key=os.path.getctime)
+        print(f"Found master candle report: {latest_report}")
+
+        # For now, we'll return an empty list since we need to implement
+        # a way to extract data from the HTML or store it separately
+        # This is a placeholder - we'll need to modify the master candle detector
+        # to also save data in a machine-readable format
+        return []
+
+    except Exception as e:
+        print(f"Error loading master candle data: {e}")
+        return None
+
+def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=0.05, window_size=7, confirmation_periods=3, master_candles=None):
     """
     Función especializada para graficar datos de minutos con etiquetas de hora en el eje X
     Incluye fractales (picos y valles) como puntos azules
@@ -193,6 +223,132 @@ def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=
                     hovertemplate='Bottom<br>Time: %{x}<br>Price: $%{y:.2f}<extra></extra>'
                 ), row=1, col=1)
 
+        # Add yellow stars at last bottom before each creek crossover
+        if len(bottoms) > 0 and master_candles is not None and len(master_candles) > 0:
+            # For each master candle (creek crossover), find the last bottom before it
+            for candle in master_candles:
+                crossover_time = pd.to_datetime(candle.get('crossover_time'))
+
+                # Find bottoms that occurred before this crossover
+                bottoms_before_crossover = bottoms[pd.to_datetime(bottoms['timestamp']) < crossover_time]
+
+                if len(bottoms_before_crossover) > 0:
+                    # Only show yellow star if cumulative_volume_score (Factor 2) > 5
+                    cumulative_volume_score = candle.get('cumulative_volume_score', 0)
+                    if cumulative_volume_score > 5:
+                        # Get the last (most recent) bottom before this crossover
+                        last_bottom_before = bottoms_before_crossover.iloc[-1]
+
+                        # Position star very close to the bottom price
+                        star_y_position = last_bottom_before['price'] - 0.5  # 0.5 points below the low
+
+                        # Add yellow star marker (same size as Factor 1)
+                        fig.add_trace(go.Scatter(
+                            x=[last_bottom_before['timestamp']],
+                            y=[star_y_position],
+                            mode='markers',
+                            marker=dict(
+                                color='yellow',
+                                size=12,  # Same size as Factor 1 stars
+                                symbol='star',
+                                line=dict(width=1, color='orange')
+                            ),
+                            name='Last Bottom Before Crossover',
+                            hovertemplate=f'Last Bottom Before Crossover<br>Time: %{{x}}<br>Price: ${last_bottom_before["price"]:.2f}<br>Creek: ${candle.get("creek_price", "N/A"):.2f}<extra></extra>',
+                            showlegend=False
+                        ), row=1, col=1)
+
+        # Add red/orange stars at big bottom (Factor 3) when longterm_volume_score > 5
+        if len(bottoms) > 0 and master_candles is not None and len(master_candles) > 0:
+            # For each master candle, find the big bottom and check Factor 3 score
+            for candle in master_candles:
+                longterm_volume_score = candle.get('longterm_volume_score', 0)
+                if longterm_volume_score > 5:
+                    crossover_time = pd.to_datetime(candle.get('crossover_time'))
+
+                    # Find big bottoms before this crossover
+                    big_bottoms_before = bottoms[
+                        (bottoms['swing_size'] == 'big') &
+                        (pd.to_datetime(bottoms['timestamp']) < crossover_time)
+                    ].sort_values('timestamp')
+
+                    if len(big_bottoms_before) > 0:
+                        # Get the last big bottom before crossover
+                        last_big_bottom = big_bottoms_before.iloc[-1]
+
+                        # Position star very close to the big bottom price
+                        star_y_position = last_big_bottom['price'] - 0.5  # 0.5 points below the low
+
+                        # Add gold star marker (Factor 3) - same color as Factor 1
+                        fig.add_trace(go.Scatter(
+                            x=[last_big_bottom['timestamp']],
+                            y=[star_y_position],
+                            mode='markers',
+                            marker=dict(
+                                color='gold',
+                                size=12,  # Same size as other factor stars
+                                symbol='star',
+                                line=dict(width=1, color='orange')
+                            ),
+                            name='Factor 3 - Big Bottom',
+                            hovertemplate=f'Factor 3 - Long-term Volume<br>Time: %{{x}}<br>Big Bottom: ${last_big_bottom["price"]:.2f}<br>LT Vol Score: {longterm_volume_score}/10<extra></extra>',
+                            showlegend=False
+                        ), row=1, col=1)
+
+    # Add markers for Factor 4 and Factor 5 qualifying candles
+    if master_candles is not None and len(master_candles) > 0:
+        for candle in master_candles:
+            range_score = candle.get('range_score', 0)
+            qualifying_candles = candle.get('qualifying_candles', [])
+            crossover_range_score = candle.get('crossover_range_score', 0)
+
+            # Factor 4: Add yellow rectangle markers on qualifying swing candles
+            if len(qualifying_candles) > 0:
+                for qual_candle in qualifying_candles:
+                    qual_time = pd.to_datetime(qual_candle['time'])
+                    qual_high = qual_candle['high']
+
+                    # Position rectangle just a tick above the high of the qualifying candle
+                    rect_y_position = qual_high + 0.5  # Add small tick margin above the high
+
+                    # Add yellow rectangle marker (Factor 4) at qualifying candle high
+                    fig.add_trace(go.Scatter(
+                        x=[qual_time],
+                        y=[rect_y_position],
+                        mode='markers',
+                        marker=dict(
+                            color='yellow',
+                            size=12,  # Same size as stars
+                            symbol='square'
+                        ),
+                        name='Factor 4 - Swing Range & Tail',
+                        hovertemplate=f'Factor 4 - Swing Range & Tail<br>Time: %{{x}}<br>High: ${qual_high:.2f}<br>Factor 4 Score: {range_score}/10<br>Range Ratio: {qual_candle["range_ratio"]:.2f}x<br>Tail: {qual_candle["tail_percentage"]:.1%}<extra></extra>',
+                        showlegend=False
+                    ), row=1, col=1)
+
+            # Factor 5: Add marker on crossover candle if it meets criteria (score > 5)
+            if crossover_range_score > 5:
+                crossover_time = pd.to_datetime(candle.get('crossover_time'))
+                crossover_high = candle.get('crossover_high', candle.get('crossover_close', 0))
+
+                # Position marker above crossover candle high
+                cross_y_position = crossover_high + 1.0  # Slightly higher than Factor 4 markers
+
+                # Add yellow square marker (Factor 5) at crossover candle high
+                fig.add_trace(go.Scatter(
+                    x=[crossover_time],
+                    y=[cross_y_position],
+                    mode='markers',
+                    marker=dict(
+                        color='yellow',
+                        size=12,  # Same size as stars and Factor 4
+                        symbol='square'
+                    ),
+                    name='Factor 5 - Crossover Candle',
+                    hovertemplate=f'Factor 5 - Crossover Candle<br>Time: %{{x}}<br>High: ${crossover_high:.2f}<br>Factor 5 Score: {crossover_range_score}/10<br>Range Ratio: {candle.get("crossover_range_ratio", 0):.2f}x<br>Tail: {candle.get("crossover_tail_percentage", 0):.1%}<extra></extra>',
+                    showlegend=False
+                ), row=1, col=1)
+
     # Plot pending creek lines (green horizontal lines after big downtrends)
     if df_creeks is not None and len(df_creeks) > 0:
         print(f"Adding {len(df_creeks)} pending creek lines to chart")
@@ -280,6 +436,42 @@ def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=
                     ),
                     name='Creek Point',
                     hovertemplate=f'Pending Creek Start<br>Time: %{{x}}<br>Price: ${creek["price"]:.2f}<br>Strength: {creek["strength"]}<extra></extra>',
+                    showlegend=False
+                ), row=1, col=1)
+
+    # Plot master candle stars (gold stars below qualifying candles)
+    if master_candles is not None and len(master_candles) > 0:
+        print(f"Adding {len(master_candles)} master candle stars to chart")
+
+        for candle in master_candles:
+            # Convert timestamp to datetime if it's a string
+            if isinstance(candle.get('crossover_time'), str):
+                candle_time = pd.to_datetime(candle['crossover_time'])
+            else:
+                candle_time = candle.get('crossover_time')
+
+            # Get the low price for this candle to position star below it
+            candle_low = candle.get('crossover_low', candle.get('crossover_close', 0))
+
+            # Only show Factor 1 gold star if volume_score > 5
+            volume_score = candle.get('volume_score', 0)
+            if volume_score > 5:
+                # Position star very close to the low price (same as yellow stars)
+                star_y_position = candle_low - 0.5  # 0.5 points below the low
+
+                # Add gold star marker
+                fig.add_trace(go.Scatter(
+                x=[candle_time],
+                y=[star_y_position],
+                mode='markers',
+                marker=dict(
+                    color='gold',
+                    size=12,
+                    symbol='star',
+                    line=dict(width=1, color='orange')
+                ),
+                name='Master Candle',
+                    hovertemplate=f'Master Candle<br>Time: %{{x}}<br>Score: {candle.get("total_score", "N/A")}<br>Volume Ratio: {candle.get("volume_ratio", "N/A"):.2f}x<extra></extra>',
                     showlegend=False
                 ), row=1, col=1)
 
@@ -409,7 +601,7 @@ if __name__ == "__main__":
         # Crear gráfico con los datos del día específico
         print(f"\nGenerando gráfico para {TARGET_DATE}...")
         timeframe = f'1min_{TARGET_DATE}'
-        plot_minute_data(symbol, timeframe, df_filtered, fractal_method='zigzag', change_pct=0.1)
+        plot_minute_data(symbol, timeframe, df_filtered, fractal_method='zigzag', change_pct=0.1, master_candles=None)
 
     else:
         print(f"No se encontraron datos para la fecha {TARGET_DATE}")

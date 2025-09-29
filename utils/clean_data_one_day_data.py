@@ -11,7 +11,7 @@ from plot_minute_data import plot_minute_data
 # ====================================================
 
 symbol = SYMBOL
-TARGET_DATE = '2023-03-01'  # Formato: YYYY-MM-DD
+TARGET_DATE = '2023-03-02'  # Formato: YYYY-MM-DD
 
 # ====================================================
 # 📥 CARGA DE DATOS
