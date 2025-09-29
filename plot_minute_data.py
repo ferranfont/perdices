@@ -12,7 +12,7 @@ from config import CHART_WIDTH, CHART_HEIGHT, CHART_TEMPLATE, get_chart_path, DA
 # ⚙️ Configuration =========================================
 
 CSV_FILE = 'es_1min_data_2015_2025.csv'  # CSV file to plot
-FRACTAL_CSV_FILE = 'fractals_2023_03_01_zigzag_0.1.csv'  # Fractal detection results
+FRACTAL_CSV_FILE = 'fractals_2023_03_02_zigzag_0.1.csv'  # Fractal detection results
 
 #  ==========================================================
 
@@ -556,7 +556,7 @@ def plot_minute_data(symbol, timeframe, df, fractal_method='zigzag', change_pct=
 
 if __name__ == "__main__":
     # Configuración para ejecución directa
-    TARGET_DATE = '2023-03-01'  # Cambiar esta fecha según necesidad
+    TARGET_DATE = '2023-03-02'  # Cambiar esta fecha según necesidad
     symbol = SYMBOL
 
     # ====================================================
